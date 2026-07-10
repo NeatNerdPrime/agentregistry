@@ -130,12 +130,21 @@ func TestCompositionRefKindDefaultingPersists(t *testing.T) {
 }
 
 // TestHarnessCompatibilityIsMatrixOnly asserts Agent compatibility is a
-// harness-type matrix; the deployment owns concrete version/policy selection.
+// harness-type matrix; the deployment owns concrete policy selection.
 func TestHarnessCompatibilityIsMatrixOnly(t *testing.T) {
 	harnessType := reflect.TypeFor[HarnessCompatibility]()
 	for _, removed := range []string{"Version", "Plugins", "Skills", "Instructions", "MCPServers"} {
 		if _, ok := harnessType.FieldByName(removed); ok {
 			t.Fatalf("HarnessCompatibility must not expose %s; selection and composition live elsewhere", removed)
 		}
+	}
+}
+
+// TestDeploymentHarnessDoesNotExposeVersion asserts deployment harness
+// selection stays limited to fields the deploy path actually consumes.
+func TestDeploymentHarnessDoesNotExposeVersion(t *testing.T) {
+	harnessType := reflect.TypeFor[DeploymentHarness]()
+	if _, ok := harnessType.FieldByName("Version"); ok {
+		t.Fatalf("DeploymentHarness must not expose Version until runtime image resolution uses it")
 	}
 }
