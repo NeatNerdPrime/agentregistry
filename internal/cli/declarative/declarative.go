@@ -50,8 +50,7 @@ func init() {
 	scheme.Register(typedKind(
 		"agent", "agents", []string{"Agent"},
 		[]scheme.Column{
-			{Header: "NAME"}, {Header: "TAG"},
-			{Header: "PROVIDER"}, {Header: "MODEL"},
+			{Header: "NAME"}, {Header: "TAG"}, {Header: "MODE"}, {Header: "DESCRIPTION"},
 		},
 		v1alpha1.KindAgent,
 		func() *v1alpha1.Agent { return &v1alpha1.Agent{} },
