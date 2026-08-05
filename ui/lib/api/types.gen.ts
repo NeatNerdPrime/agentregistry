@@ -392,6 +392,13 @@ export type McpTransport = {
     type: string;
 };
 
+export type MarketplaceResponse = {
+    $schema?: string;
+    name: string;
+    owner: Owner;
+    plugins: Array<PluginEntry>;
+};
+
 export type Model = {
     apiVersion: string;
     kind: string;
@@ -468,6 +475,11 @@ export type OfficialMeta = {
     updatedAt?: string;
 };
 
+export type Owner = {
+    email?: string;
+    name: string;
+};
+
 export type PathOrPaths = {
     Values: Array<string> | null;
     WasArray: boolean;
@@ -505,6 +517,13 @@ export type PluginChannel = {
 export type PluginDependency = {
     marketplace?: string;
     name?: string;
+    version?: string;
+};
+
+export type PluginEntry = {
+    description?: string;
+    name: string;
+    source: unknown;
     version?: string;
 };
 
@@ -776,6 +795,31 @@ export type VersionBody = {
      */
     version: string;
 };
+
+export type PluginMarketplaceGetData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/plugin-marketplace/marketplace.json';
+};
+
+export type PluginMarketplaceGetErrors = {
+    /**
+     * Error
+     */
+    default: ErrorModel;
+};
+
+export type PluginMarketplaceGetError = PluginMarketplaceGetErrors[keyof PluginMarketplaceGetErrors];
+
+export type PluginMarketplaceGetResponses = {
+    /**
+     * OK
+     */
+    200: MarketplaceResponse;
+};
+
+export type PluginMarketplaceGetResponse = PluginMarketplaceGetResponses[keyof PluginMarketplaceGetResponses];
 
 export type McpRegistryListServersData = {
     body?: never;
