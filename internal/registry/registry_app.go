@@ -20,6 +20,7 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/modelcontextprotocol/go-sdk/oauthex"
 
+	"github.com/agentregistry-dev/agentregistry/internal/cli/common/gitutil"
 	mcpregistry "github.com/agentregistry-dev/agentregistry/internal/mcp/registryserver"
 	"github.com/agentregistry-dev/agentregistry/internal/registry/api"
 	"github.com/agentregistry-dev/agentregistry/internal/registry/api/handlers/v0/crud"
@@ -27,7 +28,6 @@ import (
 	"github.com/agentregistry-dev/agentregistry/internal/registry/config"
 	controller "github.com/agentregistry-dev/agentregistry/internal/registry/controller"
 	internaldb "github.com/agentregistry-dev/agentregistry/internal/registry/database"
-	pluginsource "github.com/agentregistry-dev/agentregistry/internal/registry/plugins/source"
 	deploymentsvc "github.com/agentregistry-dev/agentregistry/internal/registry/service/deployment"
 	"github.com/agentregistry-dev/agentregistry/internal/registry/telemetry"
 	"github.com/agentregistry-dev/agentregistry/internal/version"
@@ -105,7 +105,10 @@ func App(ctx context.Context, opts ...types.AppOptions) error {
 	// The Plugin controller resolves each plugin's pinned source pointer to a
 	// concrete commit/digest and records the manifest/inventory in PluginStatus
 	// out of band of the API write — same pattern as the Deployment controller.
-	pluginController, err := controller.NewPluginController(pool, stores, controller.PluginControllerDeps{Resolver: pluginsource.NewGitResolver()})
+	// One git source carries the credential hook for every consumer, so private
+	// repositories are configured in exactly one place.
+	gitSource := gitutil.NewSource(options.GitCredentials)
+	pluginController, err := controller.NewPluginController(pool, stores, controller.PluginControllerDeps{Git: gitSource})
 	if err != nil {
 		return fmt.Errorf("create plugin controller: %w", err)
 	}
@@ -119,7 +122,7 @@ func App(ctx context.Context, opts ...types.AppOptions) error {
 	// concrete commit and records it in SkillStatus out of band of the API write
 	// — the resolve-and-pin counterpart to the Plugin controller, minus the
 	// manifest/inventory scan (a skill has no bundle to enumerate).
-	skillController, err := controller.NewSkillController(pool, stores, controller.SkillControllerDeps{})
+	skillController, err := controller.NewSkillController(pool, stores, controller.SkillControllerDeps{Git: gitSource})
 	if err != nil {
 		return fmt.Errorf("create skill controller: %w", err)
 	}

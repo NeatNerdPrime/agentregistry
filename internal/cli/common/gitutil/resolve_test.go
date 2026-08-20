@@ -2,8 +2,12 @@ package gitutil
 
 import (
 	"context"
+	"errors"
+	"net/url"
 	"strings"
 	"testing"
+
+	"github.com/agentregistry-dev/agentregistry/pkg/api/v1alpha1"
 )
 
 func TestIsFullCommitSHA(t *testing.T) {
@@ -68,7 +72,7 @@ func TestSafeGitRef(t *testing.T) {
 
 func TestResolveRefRejectsOptionInjection(t *testing.T) {
 	// A ref that git would parse as an option must be rejected before exec.
-	if _, err := ResolveRefContext(context.Background(), "https://github.com/org/repo", "--upload-pack=touch /tmp/pwn"); err == nil {
+	if _, err := ResolveRefContext(context.Background(), "https://github.com/org/repo", "--upload-pack=touch /tmp/pwn", nil); err == nil {
 		t.Fatal("expected ResolveRefContext to reject an option-like ref")
 	}
 }
@@ -76,11 +80,88 @@ func TestResolveRefRejectsOptionInjection(t *testing.T) {
 func TestResolveRefPassesThroughFullSHA(t *testing.T) {
 	// A full SHA needs no network round-trip; it is returned lowercased.
 	sha := strings.Repeat("A", 40)
-	got, err := ResolveRefContext(context.Background(), "https://github.com/org/repo", sha)
+	got, err := ResolveRefContext(context.Background(), "https://github.com/org/repo", sha, nil)
 	if err != nil {
 		t.Fatalf("ResolveRefContext: %v", err)
 	}
 	if got != strings.ToLower(sha) {
 		t.Fatalf("ResolveRefContext passthrough = %q, want lowercased SHA", got)
+	}
+}
+
+func TestAuthenticate(t *testing.T) {
+	const cloneURL = "https://github.com/org/repo.git"
+
+	execURL, safeURL, err := authenticate(cloneURL, nil)
+	if err != nil {
+		t.Fatalf("authenticate(nil): %v", err)
+	}
+	if execURL != cloneURL || safeURL != cloneURL {
+		t.Fatalf("authenticate(nil) = (%q, %q), want the URL unchanged", execURL, safeURL)
+	}
+
+	execURL, safeURL, err = authenticate(cloneURL, url.UserPassword("git", "ghp_secret"))
+	if err != nil {
+		t.Fatalf("authenticate: %v", err)
+	}
+	if execURL != "https://git:ghp_secret@github.com/org/repo.git" {
+		t.Fatalf("exec URL = %q, want the token spliced in", execURL)
+	}
+	if strings.Contains(safeURL, "ghp_secret") {
+		t.Fatalf("safe URL = %q, must not carry the token", safeURL)
+	}
+}
+
+func TestResolveRefRedactsCredentialsInErrors(t *testing.T) {
+	// Resolve errors are persisted into resource status, so a spliced token must
+	// never reach the error string. A cancelled ctx fails ls-remote without
+	// touching the network.
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	_, err := ResolveRefContext(ctx, "https://github.com/org/repo.git", "main", url.UserPassword("git", "ghp_secret"))
+	if err == nil {
+		t.Fatal("expected ls-remote to fail under a cancelled context")
+	}
+	if strings.Contains(err.Error(), "ghp_secret") {
+		t.Fatalf("error leaks the token: %v", err)
+	}
+}
+
+func TestSourceCredentialFailureIsWrapped(t *testing.T) {
+	repo := &v1alpha1.Repository{URL: "https://github.com/org/repo", Branch: "main"}
+	want := errors.New("boom")
+	src := NewSource(func(context.Context, string, *v1alpha1.Repository) (*url.Userinfo, error) {
+		return nil, want
+	})
+	_, err := src.Pin(context.Background(), "ns", repo)
+	if !errors.Is(err, want) {
+		t.Fatalf("Pin error = %v, want it to wrap %v", err, want)
+	}
+	if !strings.Contains(err.Error(), "resolve git credentials") {
+		t.Fatalf("Pin error = %v, want it to name credential resolution", err)
+	}
+}
+
+func TestSourceRequiresURL(t *testing.T) {
+	src := NewSource(nil)
+	if _, err := src.Pin(context.Background(), "ns", &v1alpha1.Repository{}); err == nil {
+		t.Fatal("expected Pin to reject a repository with no url")
+	}
+	if _, err := src.Fetch(context.Background(), "ns", nil, t.TempDir()); err == nil {
+		t.Fatal("expected Fetch to reject a nil repository")
+	}
+}
+
+// A pinned full SHA needs no network, so Pin must short-circuit to it.
+func TestSourcePinPrefersExplicitCommit(t *testing.T) {
+	const sha = "0123456789abcdef0123456789abcdef01234567"
+	got, err := NewSource(nil).Pin(context.Background(), "ns", &v1alpha1.Repository{
+		URL: "https://github.com/org/repo", Branch: "main", Commit: sha,
+	})
+	if err != nil {
+		t.Fatalf("Pin: %v", err)
+	}
+	if got != sha {
+		t.Fatalf("Pin = %q, want %q", got, sha)
 	}
 }
